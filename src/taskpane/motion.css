@@ -1,0 +1,285 @@
+/*
+ * 动效层：短距离、物理弹簧，先响应再柔和收尾。
+ * --spring-smooth / snappy / bouncy 由 motion.ts 按阻尼振子采样生成（"时长 linear(...)"），
+ * 进场走弹簧，退场走更短的 ease-in-out；按下极快，松手弹回。
+ * 浮层用可反向的 transition；一次性消息用 keyframes，不在流式更新时重播。
+ * 主要动画只改变 transform / opacity，只有详情展开需要改变布局。
+ */
+:root {
+  --ease-out: var(--motion-ease-out);
+  --ease-in-out: var(--motion-ease-inOut);
+  --ease-spring: var(--motion-ease-spring);
+  --ease-sheet: var(--motion-ease-sheet);
+  --dur-fast: var(--motion-micro);
+  --dur: var(--motion-standard);
+  --dur-slow: var(--motion-panel);
+}
+
+/* ============ 关键帧 ============ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(var(--motion-distance-content)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(var(--motion-scale-pop)); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(var(--motion-distance-micro)) scale(var(--motion-scale-chip)); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes rise-user {
+  from { opacity: 0; transform: translateY(var(--motion-distance-content)) scale(var(--motion-scale-enter)); }
+  to { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+@keyframes select-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.012); }
+  100% { transform: scale(1); }
+}
+@keyframes rise-soft {
+  from { opacity: 0; transform: translateY(var(--motion-distance-dialog)) scale(0.97); filter: blur(4px); }
+  60% { filter: blur(0); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes status-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+/* ============ 浮层：开、关和中途反向共享同一条过渡 ============ */
+.is-exiting, .is-exiting * { pointer-events: none !important; }
+.presence :is(.history-overlay, .settings-overlay, .preview-overlay, .drop-overlay) {
+  animation: none;
+  opacity: 1;
+  transition: opacity var(--motion-panel) var(--ease-out);
+}
+.presence :is(.history-panel, .settings-panel, .preview-panel, .drop-inner, .header-menu, .chat-model-menu, .task-catalog, .jump-latest, .welcome-panel) {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  transition: transform var(--spring-smooth), opacity var(--dur) var(--ease-out);
+}
+/* 小菜单用带一点过冲的弹簧，从触发点“长”出来 */
+.presence :is(.header-menu, .chat-model-menu, .jump-latest) { transition: transform var(--spring-snappy), opacity var(--dur-fast) var(--ease-out); }
+.presence .jump-latest { transform: translateX(-50%); }
+.header-menu { transform-origin: top right; }
+.chat-model-menu { transform-origin: top left; }
+.task-catalog { transform-origin: 50% 100%; }
+
+.presence:is(.is-entering, .is-exiting) :is(.history-overlay, .settings-overlay, .preview-overlay, .drop-overlay) { opacity: 0; }
+.presence:is(.is-entering, .is-exiting) .history-panel { opacity: 0; transform: translateX(calc(-1 * var(--motion-distance-panel))); }
+.presence:is(.is-entering, .is-exiting) :is(.settings-panel, .preview-panel, .drop-inner) { opacity: 0; transform: translateY(var(--motion-distance-panel)) scale(0.96); }
+.presence:is(.is-entering, .is-exiting) :is(.header-menu, .chat-model-menu) { opacity: 0; transform: translateY(calc(-1 * var(--motion-distance-micro))) scale(0.9); }
+.presence:is(.is-entering, .is-exiting) .task-catalog { opacity: 0; transform: translateY(var(--motion-distance-content)) scale(var(--motion-scale-enter)); }
+.presence:is(.is-entering, .is-exiting) .jump-latest { opacity: 0; transform: translate(-50%, 10px) scale(0.8); }
+.presence.is-exiting :is(.history-overlay, .settings-overlay, .preview-overlay, .drop-overlay, .history-panel, .settings-panel, .preview-panel, .drop-inner, .header-menu, .chat-model-menu, .task-catalog, .jump-latest, .welcome-panel),
+.presence.is-exiting > .motion-collapse {
+  transition-duration: var(--presence-exit-duration);
+  transition-timing-function: var(--ease-in-out);
+}
+/* 欢迎页退场时脱离文档流，让第一条消息原地出现、两者交叉淡化 */
+.presence.is-exiting .welcome-panel {
+  position: absolute;
+  top: 16px;
+  left: 12px;
+  right: 12px;
+  margin: 0 auto;
+  opacity: 0;
+  transform: translateY(calc(-1 * var(--motion-distance-micro)));
+}
+
+/* 浮层整体承担位移动画，内部列表只淡入，避免叠加移动。 */
+.task-results button { animation: fade-in var(--dur) var(--ease-out) backwards; }
+.launcher-caret { display: inline-block; transition: transform var(--spring-snappy); }
+.launcher-caret.open { transform: rotate(180deg); }
+
+.history-group, .memory-item, .skill-item, .template-card, .tl-item, .batch-run-item { animation: fade-in var(--dur) var(--ease-out) backwards; }
+.model-list, .undo-list { animation: detail-in var(--spring-smooth) backwards; }
+
+/* ============ 欢迎页：逐层揭示 ============ */
+.welcome-panel > * { animation: rise var(--spring-smooth) backwards; }
+.welcome-panel > .welcome-mark { animation: pop-in var(--spring-bouncy) backwards; }
+/* 标题从轻微虚焦中显影；只作用于单个元素，一次性 */
+.welcome-panel > h1 { animation-name: rise-soft; }
+.welcome-eyebrow { animation-delay: calc(var(--motion-stagger) * 1); }
+.welcome-panel h1 { animation-delay: calc(var(--motion-stagger) * 2); }
+.welcome-description { animation-delay: calc(var(--motion-stagger) * 3); }
+.welcome-setup { animation-delay: calc(var(--motion-stagger) * 3); }
+.welcome-section-head { animation-delay: calc(var(--motion-stagger) * 4); }
+.welcome-panel > .welcome-tasks { animation: none; }
+.welcome-tasks > button { animation: rise var(--spring-smooth) backwards; }
+.welcome-tasks > button:nth-child(1) { animation-delay: calc(var(--motion-stagger) * 4); }
+.welcome-tasks > button:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 5); }
+.welcome-tasks > button:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 6); }
+.welcome-tasks > button:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 7); }
+.welcome-tip { animation-delay: calc(var(--motion-stagger) * 8); }
+
+/* ============ 对话流 ============ */
+.chat-list { position: relative; }
+/* 用户气泡从发送按钮方向落进来；助手回复与卡片平稳浮起；思考气泡轻弹出现 */
+.msg-row.user { transform-origin: 100% 100%; animation: rise-user var(--spring-snappy) backwards; }
+.msg-row.assistant { animation: rise var(--spring-smooth) backwards; }
+.thinking-row { transform-origin: 0 100%; animation: pop-in var(--spring-bouncy) backwards; }
+.tool-card, .confirm-card, .choice-card, .error-bubble, .audit-card, .process-group { animation: rise var(--spring-smooth) backwards; }
+.notice-bubble, .followup-bar { animation: fade-in var(--dur) var(--ease-out) backwards; }
+.followup-chip { animation: chip-in var(--spring-snappy) backwards; }
+.followup-chip:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 2); }
+.followup-chip:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 4); }
+.followup-chip:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 6); }
+.cursor-blink { animation: blink 1s ease-in-out infinite; }
+
+/* 工具卡片：状态图标弹出、展开箭头旋转、详情高度平滑展开 */
+.tool-card { transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out); }
+.tool-status.ok, .tool-status.error { display: inline-block; animation: status-pop var(--spring-bouncy) backwards; }
+.tool-expand { display: inline-block; transition: transform var(--spring-snappy), color var(--dur-fast) var(--ease-out); }
+.tool-expand.open { transform: rotate(90deg); }
+.tool-card-head:hover .tool-expand { color: var(--green-dark); }
+.tool-detail-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--spring-smooth);
+}
+.tool-detail-wrap > div {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(calc(-1 * var(--motion-distance-micro)));
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+.tool-detail-wrap.open { grid-template-rows: 1fr; }
+.tool-detail-wrap.open > div { opacity: 1; transform: none; }
+.tool-detail { animation: none; }
+
+/* 确认 / 选择 / 体检卡片：状态改变时柔和过渡 */
+.confirm-card, .choice-card, .audit-card { transition: opacity var(--dur-slow) var(--ease-out), border-color var(--dur) var(--ease-out); }
+.choice-option.selected { animation: select-bounce var(--spring-snappy); }
+
+/* ============ 输入区 ============ */
+.input-row {
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.file-chip, .image-chip, .artifact-chip, .restored-tag { animation: chip-in var(--spring-snappy) backwards; }
+.queue-chip, .run-status, .rollback-bar, .bg-run-banner, .storage-warning {
+  animation: rise var(--spring-smooth) backwards;
+}
+
+/* 发送按钮：禁用态由灰度过渡到绿色渐变，而不是瞬间换色；纸飞机悬停时微微起飞 */
+.send-btn {
+  background: var(--grad);
+  animation: pop-in var(--spring-bouncy) backwards;
+  transition: transform var(--spring-bouncy), filter var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+.send-btn:disabled { background: var(--grad); filter: saturate(0) brightness(1.35); opacity: 0.6; }
+.send-btn:hover:not(:disabled) { transform: translateY(calc(-1 * var(--motion-distance-hover))) scale(1.02); filter: brightness(1.04); }
+.send-btn:active:not(:disabled) { transform: scale(0.9); transition-duration: var(--motion-press); transition-timing-function: var(--ease-out); }
+.send-btn:not(.stop) svg { transition: transform var(--spring-bouncy); }
+.send-btn:not(.stop):hover:not(:disabled) svg { transform: translate(1px, -1px); }
+
+/* ============ 头部 ============ */
+.header-model-arrow { display: inline-block; transition: transform var(--spring-snappy); }
+.header-model.active .header-model-arrow { transform: rotate(180deg); }
+.menu-item:hover:not(:disabled) .menu-item-icon { transform: scale(1.04); }
+
+/* ============ 按压与悬停反馈 ============ */
+.chip, .btn, .icon-btn, .followup-chip, .example-item, .welcome-tasks > button, .welcome-setup,
+.task-results button, .task-categories button, .choice-option, .provider-btn, .history-new-btn,
+.attach-btn, .queue-next-btn, .artifact-chip, .menu-item, .file-chip-alias, .preview-tab, .inline-btn,
+.error-retry, .history-item, .model-item, .chat-model-list button, .tool-card-head, .audit-issue, .skill-item-head,
+.template-card, .batch-file, .welcome-section-head button, .bubble-expand, .choice-skip {
+  transition:
+    transform var(--spring-snappy),
+    box-shadow var(--dur) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out),
+    outline-color var(--dur-fast) var(--ease-out);
+}
+.welcome-tasks > button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(32, 58, 41, 0.1), 0 1px 2px rgba(32, 58, 41, 0.04);
+}
+.welcome-tasks > button > span:last-child { transition: transform var(--spring-bouncy), color var(--dur-fast) var(--ease-out); }
+.welcome-tasks > button:hover:not(:disabled) > span:last-child { transform: translate(2px, -2px); color: var(--green); }
+.welcome-setup:hover { transform: translateY(calc(-1 * var(--motion-distance-hover))); box-shadow: 0 8px 22px rgba(19, 118, 83, 0.12); }
+.task-results button:hover:not(:disabled) { transform: translateY(calc(-1 * var(--motion-distance-hover))); box-shadow: var(--shadow-sm); }
+.btn.primary:hover:not(:disabled), .history-new-btn:hover { transform: translateY(calc(-1 * var(--motion-distance-hover))); }
+.choice-option:hover:not(:disabled) { transform: translateY(calc(-1 * var(--motion-distance-hover))); }
+.template-card:hover { transform: translateY(calc(-1 * var(--motion-distance-hover))); }
+
+/* 按压规则放在悬停之后，鼠标停在卡片上时也能看到按下反馈。 */
+.chip:active:not(:disabled), .btn:active:not(:disabled), .btn.primary:active:not(:disabled), .followup-chip:active:not(:disabled),
+.example-item:active:not(:disabled), .welcome-tasks > button:active:not(:disabled), .welcome-setup:active,
+.task-results button:active:not(:disabled), .task-categories button:active:active,
+.choice-option:active:not(:disabled), .provider-btn:active, .history-new-btn:active, .attach-btn:active,
+.queue-next-btn:active:not(:disabled), .artifact-chip:active, .menu-item:active:not(:disabled),
+.inline-btn:active:not(:disabled), .error-retry:active, .preview-tab:active, .history-item-main:active, .model-item:active,
+.chat-model-list button:active {
+  transform: scale(var(--motion-scale-press));
+  transition-duration: var(--motion-press);
+  transition-timing-function: var(--ease-out);
+}
+.icon-btn:active:not(:disabled) { transform: scale(var(--motion-scale-iconPress)); transition-duration: var(--motion-press); transition-timing-function: var(--ease-out); }
+
+/* 公共展开区只在必要时参与布局；内层包住边距，避免关闭时留空。 */
+.motion-collapse { display: grid; grid-template-rows: 1fr; flex-shrink: 0; opacity: 1; transition: grid-template-rows var(--spring-smooth), opacity var(--dur) var(--ease-out); }
+.motion-collapse-inner { min-height: 0; overflow: hidden; }
+.presence:is(.is-entering, .is-exiting) > .motion-collapse { grid-template-rows: 0fr; opacity: 0; }
+.motion-collapse .tool-detail, .motion-collapse .undo-list, .motion-collapse .model-list { animation: none; }
+.disclosure-button { appearance: none; width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.skill-item-main.disclosure-button { padding: 0; }
+
+.motion-list { position: relative; min-width: 0; }
+.motion-list-item { display: flow-root; position: relative; min-width: 0; }
+.motion-list-item.is-removing { position: absolute; pointer-events: none; z-index: 1; }
+.motion-list-item > :is(.history-item, .skill-item, .memory-item, .template-card, .file-chip, .image-chip, button) { animation: none; }
+.task-results .motion-list-item > button { width: 100%; height: 100%; }
+.file-chips.motion-list > .motion-list-item { max-width: 100%; }
+.file-chips.motion-list .file-chip { max-width: 100%; }
+.file-chips.motion-list .file-chip-name { min-width: 0; }
+.file-chips.motion-list:empty { margin: 0; }
+.assistant-bubble .markdown { overflow-x: auto; overflow-y: hidden; }
+/* 恢复长对话时只让最近几条入场，避免数百条历史消息同时创建合成动画。 */
+.chat-list > :nth-last-child(n+7), .chat-list > :nth-last-child(n+7) .tool-status { animation: none; }
+.test-result { transition: color var(--dur-fast) var(--ease-out); }
+
+.motion-tabs { position: relative; isolation: isolate; }
+.motion-tab-indicator {
+  position: absolute; pointer-events: none; z-index: -1; border-radius: 6px;
+  background: var(--green-light); left: 0; top: 0;
+  width: var(--selection-width, 0px); height: var(--selection-height, 0px);
+  transform: translate(var(--selection-x, 0px), var(--selection-y, 0px));
+}
+.motion-tabs[data-ready="true"] > .motion-tab-indicator { transition: transform var(--spring-snappy), width var(--spring-snappy), height var(--spring-snappy); }
+.motion-tabs button { position: relative; }
+.motion-tabs button[aria-pressed="true"], .motion-tabs .preview-tab.active { background: transparent; }
+.motion-tabs.preview-tabs > .motion-tab-indicator { border-radius: 6px 6px 0 0; border-bottom: 2px solid var(--green); }
+.motion-tabs .preview-tab { border-bottom-color: transparent; }
+
+/* 固定滚动条槽；移除整屏背景模糊，降低 WebView 合成成本。 */
+.chat-list, .history-list, .settings-panel, .batch-panel, .task-catalog, .chat-model-list { scrollbar-gutter: stable; }
+.history-list { min-height: 0; }
+.history-panel > .presence > .motion-collapse { max-height: 55%; min-height: 0; }
+.history-panel > .presence > .motion-collapse > .motion-collapse-inner { overflow-y: auto; }
+.history-overlay, .settings-overlay, .preview-overlay { backdrop-filter: none; }
+button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, [role="button"]:focus-visible, [tabindex="0"]:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.preview-grid-wrap, .preview-grid [data-hit] { touch-action: pan-x pan-y; }
+.msg-image { aspect-ratio: 4 / 3; object-fit: contain; }
+
+/* 延迟也必须清零，否则“减少动态效果”下仍会逐项等待显示。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-delay: 0ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

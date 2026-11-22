@@ -1,0 +1,27 @@
+# 依赖与构建产物（打包源码时不要带上）
+node_modules/
+dist/
+pack/
+
+# 本机生成 / 调试残留
+assets/icon-*.png
+vendor/office-js/
+runtime/node.exe
+ExcelAIAgent.xlsx
+tests/fixtures/*.xlsx
+*.log
+*.tgz
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器与其它工具缓存
+.zcode/
+.vscode/
+.idea/
+*.swp
+
+# 环境与密钥（API Key 存在浏览器 localStorage，不要把 .env 打进包）
+.env
+.env.*
+!.env.example

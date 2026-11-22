@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    图片、媒体、字体只能来自插件自身或 data:/blob:：模型回复里即使混进了远程资源也发不出请求。
+    不限制 script-src / connect-src：Office.js 要按宿主加载脚本，模型 API 地址由用户自己填。
+  -->
+  <meta http-equiv="Content-Security-Policy" content="img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; object-src 'none'" />
+  <title>Excel AI Agent</title>
+  <script src="office-js/office.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

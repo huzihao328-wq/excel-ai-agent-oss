@@ -1,0 +1,14 @@
+---
+description: 安装、侧载、注册、卸载或打包本 Excel 插件前必须先读 INSTALL.AGENT.md
+alwaysApply: true
+---
+
+# 安装本插件前必读
+
+在安装、侧载、注册、卸载、打包、启动 `npm start` / `install-addin`，或处理「插件打不开 / 没有按钮 / localhost 证书 / 3000 端口」之前：
+
+1. **先完整阅读** 仓库根目录的 `INSTALL.AGENT.md`，不要只扫标题。
+2. 只按该文档的命令和顺序执行。路径含空格时必须加引号（本机常见：`E:\excel agent`）。
+3. 公司内网用离线包 + `install.cmd`，不要跑 `npm install`。
+4. 不要发明步骤：不要改 `manifest.xml` 的 `https://localhost:3000`、不要往 XLSTART 放 `Book.xltx`、不要同时开 webpack 与静态服务。
+4. 失败时按文档「故障排除」处理，向用户报告命令、原文报错和已做修复。
